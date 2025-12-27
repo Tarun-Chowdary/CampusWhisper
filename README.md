@@ -1,5 +1,7 @@
 # CampusWhispher 🌙
 
+[🌐 Visit CampusWhisper Live](https://campus-whisper.vercel.app/matchmaking)
+
 CampusWhispher is a real-time, anonymous chat platform built for college students to connect effortlessly while maintaining privacy and safety. The application allows users to match either with students from their own college or with students from any college, enabling both localized and global conversations without revealing personal identities.
 
 ---
@@ -43,9 +45,7 @@ CampusWhispher is a real-time, anonymous chat platform built for college student
 ## 🧠 How It Works
 
 1. Users sign up and complete a short profile.
-2. Users choose a matchmaking option:
-   - **My College** → matches only with students from the same college
-   - **Any College** → matches globally
+2. Users choose the matchmaking option.
 3. A real-time socket-based queue pairs two users instantly.
 4. Both users join a private chat room.
 5. Each chat runs on a countdown timer with optional mutual extension.
@@ -60,6 +60,14 @@ CampusWhispher is a real-time, anonymous chat platform built for college student
 - Report option immediately exits both users
 - Secure token-based authentication
 - Environment variables used for sensitive data
+
+---
+
+---
+
+## 🌐 Live Website
+
+[https://campus-whisper.vercel.app/matchmaking](https://campus-whisper.vercel.app/matchmaking)
 
 ---
 
