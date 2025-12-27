@@ -42,7 +42,7 @@ const Login = () => {
 
     try {
       const { data } = await axios.post(
-        "http://localhost:5000/api/users/login",
+        "https://campuswhisper.onrender.com/api/users/login",
         { email, password },
         {
           headers: {

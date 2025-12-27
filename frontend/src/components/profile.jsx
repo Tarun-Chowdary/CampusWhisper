@@ -215,7 +215,7 @@ const Profile = () => {
         .flatMap((q) => answers[q]);
 
       await axios.post(
-        "http://localhost:5000/api/users/matchmaking",
+        "https://campuswhisper.onrender.com/api/users/matchmaking",
         { gender, college, interests, preferences },
         {
           headers: {

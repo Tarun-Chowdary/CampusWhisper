@@ -10,17 +10,32 @@ dotenv.config();
 connectDB();
 
 const app = express();
-app.use(cors());
+
+/* ================== MIDDLEWARE ================== */
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173", // local dev
+      "https://campuswhisper.vercel.app", // production frontend
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
+/* ================== ROUTES ================== */
 app.use("/api/users", userRoutes);
 
+/* ================== SERVER ================== */
 const httpServer = createServer(app);
 
+/* ================== SOCKET.IO ================== */
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: ["http://localhost:5173", "https://campuswhisper.vercel.app"],
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
@@ -53,9 +68,9 @@ const startChatTimer = (roomId) => {
 
 /* ================== SOCKET EVENTS ================== */
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("🟢 User connected:", socket.id);
 
-  /* -------- MATCHMAKING QUEUE -------- */
+  /* -------- MATCHMAKING -------- */
   socket.on("join-queue", ({ userId }) => {
     if (matchmakingQueue.find((u) => u.userId === userId)) return;
 
@@ -135,8 +150,10 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const index = matchmakingQueue.findIndex((u) => u.socketId === socket.id);
     if (index !== -1) matchmakingQueue.splice(index, 1);
+    console.log("🔴 User disconnected:", socket.id);
   });
 });
 
+/* ================== LISTEN ================== */
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
