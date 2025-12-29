@@ -9,6 +9,10 @@ import protect from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+app.get("/ping", (req, res) => {
+  res.json({ message: "API working" });
+});
+
 // auth
 router.post("/signup", registerUser);
 router.post("/login", authUser);
