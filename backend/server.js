@@ -14,12 +14,15 @@ const app = express();
 /* ================== MIDDLEWARE ================== */
 app.use(
   cors({
-    origin: [
-      "https://campuswhisper.vercel.app", // production frontend
-    ],
+    origin: "https://campuswhisper.vercel.app",
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// handle preflight requests
+app.options("*", cors());
 
 app.use(express.json());
 
@@ -32,7 +35,7 @@ const httpServer = createServer(app);
 /* ================== SOCKET.IO ================== */
 const io = new Server(httpServer, {
   cors: {
-    origin: ["http://localhost:5173", "https://campuswhisper.vercel.app"],
+    origin: "https://campuswhisper.vercel.app",
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -69,7 +72,6 @@ const startChatTimer = (roomId) => {
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
-  /* -------- MATCHMAKING -------- */
   socket.on("join-queue", ({ userId }) => {
     if (matchmakingQueue.find((u) => u.userId === userId)) return;
 
@@ -101,12 +103,10 @@ io.on("connection", (socket) => {
     }
   });
 
-  /* -------- JOIN ROOM -------- */
   socket.on("join-room", ({ roomId }) => {
     socket.join(roomId);
   });
 
-  /* -------- SEND MESSAGE -------- */
   socket.on("send-message", ({ roomId, text }) => {
     socket.to(roomId).emit("receive-message", {
       text,
@@ -114,7 +114,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  /* -------- EXTENSION VOTE -------- */
   socket.on("extension-vote", ({ roomId, vote, extraTime }) => {
     const chat = activeChats[roomId];
     if (!chat) return;
@@ -136,7 +135,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  /* -------- END CHAT -------- */
   socket.on("end-chat", ({ roomId }) => {
     if (activeChats[roomId]) {
       clearInterval(activeChats[roomId].timer);
@@ -145,7 +143,6 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("chat-ended");
   });
 
-  /* -------- DISCONNECT -------- */
   socket.on("disconnect", () => {
     const index = matchmakingQueue.findIndex((u) => u.socketId === socket.id);
     if (index !== -1) matchmakingQueue.splice(index, 1);
