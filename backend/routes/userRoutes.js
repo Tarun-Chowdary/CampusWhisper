@@ -8,9 +8,6 @@ import {
 import protect from "../middleware/authMiddleware.js";
 
 const router = express.Router();
-app.get("/", (req, res) => {
-  res.send("Backend alive");
-});
 
 /* ================== TEST ROUTE ================== */
 router.get("/ping", (req, res) => {
