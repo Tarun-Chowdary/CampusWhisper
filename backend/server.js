@@ -12,17 +12,27 @@ connectDB();
 const app = express();
 
 /* ================== MIDDLEWARE ================== */
+const allowedOrigin = "https://campus-whisper.vercel.app";
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", allowedOrigin);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
 app.use(
   cors({
-    origin: "https://campus-whisper.vercel.app",
+    origin: allowedOrigin,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
-// handle preflight requests
-app.options("*", cors());
 
 app.use(express.json());
 
@@ -35,7 +45,7 @@ const httpServer = createServer(app);
 /* ================== SOCKET.IO ================== */
 const io = new Server(httpServer, {
   cors: {
-    origin: "https://campus-whisper.vercel.app",
+    origin: allowedOrigin,
     methods: ["GET", "POST"],
     credentials: true,
   },
