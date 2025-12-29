@@ -14,7 +14,7 @@ const app = express();
 /* ================== MIDDLEWARE ================== */
 app.use(
   cors({
-    origin: "https://campuswhisper.vercel.app",
+    origin: "https://campus-whisper.vercel.app",
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -35,7 +35,7 @@ const httpServer = createServer(app);
 /* ================== SOCKET.IO ================== */
 const io = new Server(httpServer, {
   cors: {
-    origin: "https://campuswhisper.vercel.app",
+    origin: "https://campus-whisper.vercel.app",
     methods: ["GET", "POST"],
     credentials: true,
   },
