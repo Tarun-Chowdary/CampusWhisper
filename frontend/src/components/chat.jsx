@@ -13,6 +13,7 @@ import {
   ModalBody,
   ModalFooter,
   useDisclosure,
+  useToast,
 } from "@chakra-ui/react";
 import { useNavigate, useLocation } from "react-router-dom";
 import socket from "../socket";
@@ -34,7 +35,7 @@ const Chat = () => {
   const [input, setInput] = useState("");
   const [ended, setEnded] = useState(false);
 
-  // ⏳ TIMER
+  /* ⏳ TIMER */
   const [timeLeft, setTimeLeft] = useState(300);
   const [showExtend, setShowExtend] = useState(false);
   const [myVote, setMyVote] = useState(null);
@@ -43,6 +44,7 @@ const Chat = () => {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
 
   const { roomId } = location.state || {};
@@ -56,7 +58,7 @@ const Chat = () => {
 
   /* ---------------- TIMER ---------------- */
   useEffect(() => {
-    if (ended) return;
+    if (ended || showExtend) return;
 
     if (timeLeft <= 0) {
       setShowExtend(true);
@@ -68,7 +70,7 @@ const Chat = () => {
     }, 1000);
 
     return () => clearInterval(t);
-  }, [timeLeft, ended]);
+  }, [timeLeft, ended, showExtend]);
 
   /* ---------------- SOCKET ---------------- */
   useEffect(() => {
@@ -83,14 +85,22 @@ const Chat = () => {
       if (decision === "reject") {
         endChat("One person didn’t want to continue.");
       } else {
-        setTimeLeft((t) => t + extraTime);
+        toast({
+          title: "Chat extended 🎉",
+          description: `Added ${extraTime / 60} minutes`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
+
+        setTimeLeft(extraTime);
         setShowExtend(false);
         setMyVote(null);
       }
     };
 
     const onChatEnded = () => {
-      if (hasEndedRef.current) return;
+      if (hasEndedRef.current || showExtend) return;
       endChat("The other person left the chat.");
     };
 
@@ -103,7 +113,7 @@ const Chat = () => {
       socket.off("extend-decision", onExtendDecision);
       socket.off("chat-ended", onChatEnded);
     };
-  }, [roomId]);
+  }, [roomId, showExtend, toast]);
 
   /* ---------------- SEND MESSAGE ---------------- */
   const sendMessage = (text) => {
@@ -131,7 +141,17 @@ const Chat = () => {
   /* ---------------- EXTEND ---------------- */
   const voteExtend = (minutes) => {
     if (myVote) return;
+
     setMyVote("yes");
+
+    toast({
+      title: "Extension requested",
+      description: "Waiting for the other person…",
+      status: "info",
+      duration: 3000,
+      isClosable: true,
+    });
+
     socket.emit("extend-decision", {
       roomId,
       decision: "extend",
@@ -142,7 +162,11 @@ const Chat = () => {
   const voteReject = () => {
     if (myVote) return;
     setMyVote("no");
-    socket.emit("extend-decision", { roomId, decision: "reject" });
+
+    socket.emit("extend-decision", {
+      roomId,
+      decision: "reject",
+    });
   };
 
   /* ---------------- REPORT ---------------- */
@@ -295,7 +319,12 @@ const Chat = () => {
           <ModalBody>
             <VStack spacing={3}>
               {reportReasons.map((r) => (
-                <Button key={r} variant="outline" colorScheme="red" onClick={() => handleReport(r)}>
+                <Button
+                  key={r}
+                  variant="outline"
+                  colorScheme="red"
+                  onClick={() => handleReport(r)}
+                >
                   {r}
                 </Button>
               ))}
