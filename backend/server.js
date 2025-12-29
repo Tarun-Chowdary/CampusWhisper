@@ -158,6 +158,15 @@ io.on("connection", (socket) => {
     if (index !== -1) matchmakingQueue.splice(index, 1);
     console.log("🔴 User disconnected:", socket.id);
   });
+
+  socket.on("typing", ({ roomId }) => {
+    socket.to(roomId).emit("typing");
+  });
+
+  socket.on("extend-decision", (data) => {
+    socket.to(data.roomId).emit("other-voted");
+    io.to(data.roomId).emit("extend-decision", data);
+  });
 });
 
 /* ================== LISTEN ================== */

@@ -14,6 +14,7 @@ import {
   ModalFooter,
   useDisclosure,
   useToast,
+  Spinner,
 } from "@chakra-ui/react";
 import { useNavigate, useLocation } from "react-router-dom";
 import socket from "../socket";
@@ -39,8 +40,14 @@ const Chat = () => {
   const [timeLeft, setTimeLeft] = useState(300);
   const [showExtend, setShowExtend] = useState(false);
   const [myVote, setMyVote] = useState(null);
+  const [otherDeciding, setOtherDeciding] = useState(false);
+
+  /* ⌨️ TYPING */
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeout = useRef(null);
 
   const hasEndedRef = useRef(false);
+  const isVotingRef = useRef(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -61,6 +68,7 @@ const Chat = () => {
     if (ended || showExtend) return;
 
     if (timeLeft <= 0) {
+      isVotingRef.current = true;
       setShowExtend(true);
       return;
     }
@@ -76,52 +84,64 @@ const Chat = () => {
   useEffect(() => {
     socket.emit("join-room", { roomId });
 
-    const onReceiveMessage = ({ text, senderSocketId }) => {
+    socket.on("receive-message", ({ text, senderSocketId }) => {
       if (senderSocketId === socket.id) return;
-      setMessages((prev) => [...prev, { text, sender: "other" }]);
-    };
+      setMessages((p) => [...p, { text, sender: "other" }]);
+    });
 
-    const onExtendDecision = ({ decision, extraTime }) => {
+    socket.on("typing", () => {
+      setIsTyping(true);
+      clearTimeout(typingTimeout.current);
+      typingTimeout.current = setTimeout(() => setIsTyping(false), 1500);
+    });
+
+    socket.on("extend-decision", ({ decision, extraTime }) => {
+      isVotingRef.current = false;
+      setOtherDeciding(false);
+
       if (decision === "reject") {
         endChat("One person didn’t want to continue.");
-      } else {
-        toast({
-          title: "Chat extended 🎉",
-          description: `Added ${extraTime / 60} minutes`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
-        });
-
-        setTimeLeft(extraTime);
-        setShowExtend(false);
-        setMyVote(null);
+        return;
       }
-    };
 
-    const onChatEnded = () => {
-      if (hasEndedRef.current || showExtend) return;
+      toast({
+        title: "Chat extended 🎉",
+        description: `Added ${extraTime / 60} minutes`,
+        status: "success",
+        duration: 4000,
+        isClosable: true,
+      });
+
+      setTimeLeft((t) => t + extraTime);
+      setShowExtend(false);
+      setMyVote(null);
+    });
+
+    socket.on("other-voted", () => {
+      setOtherDeciding(true);
+    });
+
+    socket.on("chat-ended", () => {
+      if (hasEndedRef.current || isVotingRef.current) return;
       endChat("The other person left the chat.");
-    };
+    });
 
-    socket.on("receive-message", onReceiveMessage);
-    socket.on("extend-decision", onExtendDecision);
-    socket.on("chat-ended", onChatEnded);
-
-    return () => {
-      socket.off("receive-message", onReceiveMessage);
-      socket.off("extend-decision", onExtendDecision);
-      socket.off("chat-ended", onChatEnded);
-    };
-  }, [roomId, showExtend, toast]);
+    return () => socket.removeAllListeners();
+  }, [roomId, toast]);
 
   /* ---------------- SEND MESSAGE ---------------- */
   const sendMessage = (text) => {
     if (!text.trim() || ended) return;
 
-    setMessages((prev) => [...prev, { text, sender: "me" }]);
+    setMessages((p) => [...p, { text, sender: "me" }]);
     socket.emit("send-message", { roomId, text });
     setInput("");
+  };
+
+  /* ---------------- TYPING ---------------- */
+  const handleTyping = (e) => {
+    setInput(e.target.value);
+    socket.emit("typing", { roomId });
   };
 
   /* ---------------- END CHAT ---------------- */
@@ -132,10 +152,10 @@ const Chat = () => {
     setEnded(true);
     setShowExtend(false);
 
-    setMessages((prev) => [...prev, { text: msg, sender: "system" }]);
+    setMessages((p) => [...p, { text: msg, sender: "system" }]);
     socket.emit("end-chat", { roomId });
 
-    setTimeout(() => navigate("/matchmaking"), 1500);
+    setTimeout(() => navigate("/matchmaking"), 2500);
   };
 
   /* ---------------- EXTEND ---------------- */
@@ -143,6 +163,7 @@ const Chat = () => {
     if (myVote) return;
 
     setMyVote("yes");
+    setOtherDeciding(true);
 
     toast({
       title: "Extension requested",
@@ -162,22 +183,7 @@ const Chat = () => {
   const voteReject = () => {
     if (myVote) return;
     setMyVote("no");
-
-    socket.emit("extend-decision", {
-      roomId,
-      decision: "reject",
-    });
-  };
-
-  /* ---------------- REPORT ---------------- */
-  const handleReport = (reason) => {
-    setMessages((prev) => [
-      ...prev,
-      { text: `You reported the chat (${reason}).`, sender: "system" },
-    ]);
-    socket.emit("end-chat", { roomId });
-    onClose();
-    setTimeout(() => navigate("/matchmaking"), 1500);
+    socket.emit("extend-decision", { roomId, decision: "reject" });
   };
 
   const formatTime = () => {
@@ -195,80 +201,56 @@ const Chat = () => {
             <Text color="#00f2ff" fontWeight="bold">
               Someone from your college 🎓
             </Text>
-            <HStack spacing={3}>
-              <Text color="cyan.300">⏳ {formatTime()}</Text>
-              <Button size="sm" variant="outline" colorScheme="red" onClick={onOpen}>
-                Report
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                colorScheme="cyan"
-                onClick={() => endChat("You ended the chat.")}
-              >
-                End Chat
-              </Button>
-            </HStack>
+            <Text color="cyan.300">⏳ {formatTime()}</Text>
           </HStack>
         </Box>
 
         {/* CHAT */}
-        <VStack spacing={4} px={4} py={4} minH="calc(100vh - 140px)">
-          {messages.length === 0 ? (
-            <>
-              <Text color="gray.400">Break the silence</Text>
-              <HStack wrap="wrap">
-                {starterMessages.map((m) => (
-                  <Button
-                    key={m}
-                    size="sm"
-                    variant="outline"
-                    borderColor="#00f2ff"
-                    color="#00f2ff"
-                    onClick={() => sendMessage(m)}
-                  >
-                    {m}
-                  </Button>
-                ))}
-              </HStack>
-            </>
-          ) : (
-            messages.map((m, i) => (
-              <HStack
-                key={i}
-                justify={
+        <VStack spacing={3} px={4} py={4} minH="calc(100vh - 160px)">
+          {messages.map((m, i) => (
+            <HStack
+              key={i}
+              justify={
+                m.sender === "me"
+                  ? "flex-end"
+                  : m.sender === "system"
+                  ? "center"
+                  : "flex-start"
+              }
+              w="100%"
+            >
+              <Box
+                bg={
                   m.sender === "me"
-                    ? "flex-end"
+                    ? "#00f2ff"
                     : m.sender === "system"
-                    ? "center"
-                    : "flex-start"
+                    ? "transparent"
+                    : "gray.700"
                 }
-                w="100%"
+                color={m.sender === "me" ? "black" : "white"}
+                px={4}
+                py={2}
+                borderRadius="lg"
+                maxW="75%"
               >
-                <Box
-                  bg={
-                    m.sender === "me"
-                      ? "#00f2ff"
-                      : m.sender === "system"
-                      ? "transparent"
-                      : "gray.700"
-                  }
-                  color={
-                    m.sender === "me"
-                      ? "black"
-                      : m.sender === "system"
-                      ? "gray.400"
-                      : "white"
-                  }
-                  px={4}
-                  py={2}
-                  borderRadius="lg"
-                  maxW="75%"
-                >
-                  <Text fontSize="sm">{m.text}</Text>
-                </Box>
-              </HStack>
-            ))
+                <Text fontSize="sm">{m.text}</Text>
+              </Box>
+            </HStack>
+          ))}
+
+          {isTyping && (
+            <HStack w="100%">
+              <Spinner size="xs" />
+              <Text fontSize="sm" color="gray.400">
+                Someone is typing…
+              </Text>
+            </HStack>
+          )}
+
+          {otherDeciding && (
+            <Text fontSize="sm" color="yellow.300">
+              Other user is deciding…
+            </Text>
           )}
         </VStack>
 
@@ -278,7 +260,7 @@ const Chat = () => {
             <Input
               placeholder="Type something…"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleTyping}
               bg="black"
               color="white"
               borderColor="#00f2ff"
@@ -306,34 +288,7 @@ const Chat = () => {
             </VStack>
           </ModalBody>
           <ModalFooter>
-            {myVote && <Text fontSize="sm">Waiting for other person…</Text>}
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* REPORT MODAL */}
-      <Modal isOpen={isOpen} onClose={onClose} isCentered>
-        <ModalOverlay />
-        <ModalContent bg="black" color="white">
-          <ModalHeader color="#00f2ff">Report chat</ModalHeader>
-          <ModalBody>
-            <VStack spacing={3}>
-              {reportReasons.map((r) => (
-                <Button
-                  key={r}
-                  variant="outline"
-                  colorScheme="red"
-                  onClick={() => handleReport(r)}
-                >
-                  {r}
-                </Button>
-              ))}
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
+            {myVote && <Text fontSize="sm">Waiting for response…</Text>}
           </ModalFooter>
         </ModalContent>
       </Modal>
