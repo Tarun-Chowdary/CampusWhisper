@@ -9,18 +9,17 @@ import protect from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-app.get("/ping", (req, res) => {
+/* ================== TEST ROUTE ================== */
+router.get("/ping", (req, res) => {
   res.json({ message: "API working" });
 });
 
-// auth
+/* ================== AUTH ================== */
 router.post("/signup", registerUser);
 router.post("/login", authUser);
 
-// matchmaking data save
+/* ================== MATCHMAKING ================== */
 router.post("/matchmaking", protect, saveMatchmaking);
-
-// 🔥 THIS IS THE IMPORTANT ONE
 router.get("/findMatch", protect, findMatch);
 
 export default router;
