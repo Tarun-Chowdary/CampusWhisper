@@ -73,11 +73,11 @@ const Chat = () => {
       return;
     }
 
-    const t = setInterval(() => {
-      setTimeLeft((p) => p - 1);
+    const timer = setInterval(() => {
+      setTimeLeft((t) => t - 1);
     }, 1000);
 
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [timeLeft, ended, showExtend]);
 
   /* ---------------- SOCKET ---------------- */
@@ -95,7 +95,11 @@ const Chat = () => {
       typingTimeout.current = setTimeout(() => setIsTyping(false), 1500);
     });
 
-    socket.on("extend-decision", ({ decision, extraTime }) => {
+    socket.on("other-voted", () => {
+      setOtherDeciding(true);
+    });
+
+    socket.on("extend-result", ({ decision, extraTime }) => {
       isVotingRef.current = false;
       setOtherDeciding(false);
 
@@ -115,10 +119,6 @@ const Chat = () => {
       setTimeLeft((t) => t + extraTime);
       setShowExtend(false);
       setMyVote(null);
-    });
-
-    socket.on("other-voted", () => {
-      setOtherDeciding(true);
     });
 
     socket.on("chat-ended", () => {
@@ -186,6 +186,16 @@ const Chat = () => {
     socket.emit("extend-decision", { roomId, decision: "reject" });
   };
 
+  const handleReport = (reason) => {
+    setMessages((p) => [
+      ...p,
+      { text: `You reported the chat (${reason}).`, sender: "system" },
+    ]);
+    socket.emit("end-chat", { roomId });
+    onClose();
+    setTimeout(() => navigate("/matchmaking"), 2500);
+  };
+
   const formatTime = () => {
     const m = Math.floor(timeLeft / 60);
     const s = timeLeft % 60;
@@ -201,7 +211,21 @@ const Chat = () => {
             <Text color="#00f2ff" fontWeight="bold">
               Someone from your college 🎓
             </Text>
-            <Text color="cyan.300">⏳ {formatTime()}</Text>
+
+            <HStack spacing={3}>
+              <Text color="cyan.300">⏳ {formatTime()}</Text>
+              <Button size="sm" variant="outline" colorScheme="red" onClick={onOpen}>
+                Report
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                colorScheme="cyan"
+                onClick={() => endChat("You ended the chat.")}
+              >
+                End Chat
+              </Button>
+            </HStack>
           </HStack>
         </Box>
 
@@ -239,7 +263,7 @@ const Chat = () => {
           ))}
 
           {isTyping && (
-            <HStack w="100%">
+            <HStack>
               <Spinner size="xs" />
               <Text fontSize="sm" color="gray.400">
                 Someone is typing…
@@ -289,6 +313,33 @@ const Chat = () => {
           </ModalBody>
           <ModalFooter>
             {myVote && <Text fontSize="sm">Waiting for response…</Text>}
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* REPORT MODAL */}
+      <Modal isOpen={isOpen} onClose={onClose} isCentered>
+        <ModalOverlay />
+        <ModalContent bg="black" color="white">
+          <ModalHeader color="#00f2ff">Report chat</ModalHeader>
+          <ModalBody>
+            <VStack spacing={3}>
+              {reportReasons.map((r) => (
+                <Button
+                  key={r}
+                  variant="outline"
+                  colorScheme="red"
+                  onClick={() => handleReport(r)}
+                >
+                  {r}
+                </Button>
+              ))}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

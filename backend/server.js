@@ -163,9 +163,35 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("typing");
   });
 
-  socket.on("extend-decision", (data) => {
-    socket.to(data.roomId).emit("other-voted");
-    io.to(data.roomId).emit("extend-decision", data);
+  const extendVotes = {}; // roomId -> Set(socket.id)
+
+  socket.on("extend-decision", ({ roomId, decision, extraTime }) => {
+    if (decision === "reject") {
+      io.to(roomId).emit("extend-result", { decision: "reject" });
+      delete extendVotes[roomId];
+      return;
+    }
+
+    if (!extendVotes[roomId]) {
+      extendVotes[roomId] = {
+        votes: new Set(),
+        extraTime,
+      };
+    }
+
+    extendVotes[roomId].votes.add(socket.id);
+
+    // notify other user someone voted
+    socket.to(roomId).emit("other-voted");
+
+    // BOTH USERS AGREED
+    if (extendVotes[roomId].votes.size === 2) {
+      io.to(roomId).emit("extend-result", {
+        decision: "accept",
+        extraTime,
+      });
+      delete extendVotes[roomId];
+    }
   });
 });
 
