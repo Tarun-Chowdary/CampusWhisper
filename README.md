@@ -150,7 +150,7 @@ If you encounter other issues, please check the project issues page or reach out
 
 ## 📫 Contact / Support
 
-- For questions, suggestions, or support, please open an issue on the [GitHub repository](https://github.com/your-username/campuswhisper/issues).
+- For questions, suggestions, or support, please open an issue on the [GitHub repository](https://github.com/Tarun-Chowdary/campuswhisper/issues).
 - You can also reach out via email: yegi.2992@gmail.com
 
 We welcome feedback and contributions!
