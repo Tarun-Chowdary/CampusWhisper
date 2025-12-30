@@ -30,10 +30,12 @@ const reportReasons = [
 
 const starterMessages = [
   "👋 Hey",
-  "🙂 Hi there",
-  "How’s your day going?",
-  "What are you studying?",
-  "Late night chat? 🌙",
+  "Coffee or tea person?",
+  "Movie or tv-show person?",
+  "Well, here I am! What are your other two wishes?",
+  "What is it like to be the most gorgeous person in this room?",
+  "I'm learning about important dates in history, wanna be one of them?",
+  "If you could have any superpower, what would it be?",
 ];
 
 const Chat = () => {
