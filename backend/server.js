@@ -153,18 +153,7 @@ io.on("connection", (socket) => {
 
   /* ---------- END / REPORT ---------- */
   socket.on("end-chat", async ({ roomId }) => {
-    // notify BOTH users
     io.to(roomId).emit("chat-ended");
-
-    // stop timer & cleanup
-    if (activeChats[roomId]?.timer) {
-      clearInterval(activeChats[roomId].timer);
-    }
-
-    delete activeChats[roomId];
-    delete extendVotes[roomId];
-
-    // force-remove both sockets
     await forceCloseRoom(roomId);
   });
 

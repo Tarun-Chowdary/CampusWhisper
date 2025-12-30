@@ -11,7 +11,6 @@ import {
   ModalContent,
   ModalHeader,
   ModalBody,
-  ModalFooter,
   useDisclosure,
   useToast,
   Spinner,
@@ -29,6 +28,14 @@ const reportReasons = [
   "Other",
 ];
 
+const starterMessages = [
+  "👋 Hey",
+  "🙂 Hi there",
+  "How’s your day going?",
+  "What are you studying?",
+  "Late night chat? 🌙",
+];
+
 const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -44,9 +51,6 @@ const Chat = () => {
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeout = useRef(null);
 
-  const hasEndedRef = useRef(false);
-  const isVotingRef = useRef(false);
-
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
@@ -61,13 +65,11 @@ const Chat = () => {
 
   if (!roomId) return null;
 
-  /* ---------------- TIMER (HARDENED) ---------------- */
+  /* ---------------- TIMER ---------------- */
   useEffect(() => {
-    if (ended || showExtend || isVotingRef.current) return;
+    if (ended || showExtend) return;
 
-    // show extension modal ONLY at 0
     if (timeLeft <= 0) {
-      isVotingRef.current = true;
       setShowExtend(true);
       return;
     }
@@ -99,20 +101,17 @@ const Chat = () => {
     });
 
     socket.on("extend-result", ({ decision, extraTime }) => {
-      isVotingRef.current = false;
       setOtherDeciding(false);
 
       if (decision === "reject") {
-        endChat("One person didn’t want to continue.");
+        forceEnd("One person didn’t want to continue.");
         return;
       }
 
-      // reset timer FIRST
       setTimeLeft((t) => t + extraTime);
       setShowExtend(false);
       setMyVote(null);
 
-      // delay toast so it always renders
       setTimeout(() => {
         toast({
           title: "Chat extended 🎉",
@@ -124,21 +123,22 @@ const Chat = () => {
       }, 100);
     });
 
+    // 🔥 ALWAYS end chat on report
     socket.on("chat-ended", () => {
-      // 🚫 IGNORE premature disconnects
-      if (
-        hasEndedRef.current ||
-        isVotingRef.current ||
-        timeLeft > 0
-      ) {
-        return;
-      }
-
-      endChat("The other person left the chat.");
+      forceEnd("Chat ended.");
     });
 
     return () => socket.removeAllListeners();
-  }, [roomId, toast, timeLeft]);
+  }, [roomId, toast]);
+
+  /* ---------------- FORCE END ---------------- */
+  const forceEnd = (msg) => {
+    if (ended) return;
+    setEnded(true);
+    setShowExtend(false);
+    setMessages((p) => [...p, { text: msg, sender: "system" }]);
+    setTimeout(() => navigate("/matchmaking"), 2000);
+  };
 
   /* ---------------- SEND MESSAGE ---------------- */
   const sendMessage = (text) => {
@@ -148,58 +148,15 @@ const Chat = () => {
     setInput("");
   };
 
-  /* ---------------- TYPING ---------------- */
   const handleTyping = (e) => {
     setInput(e.target.value);
     socket.emit("typing", { roomId });
   };
 
-  /* ---------------- END CHAT ---------------- */
-  const endChat = (msg) => {
-    if (hasEndedRef.current) return;
-    hasEndedRef.current = true;
-
-    setEnded(true);
-    setShowExtend(false);
-
-    setMessages((p) => [...p, { text: msg, sender: "system" }]);
-    socket.emit("end-chat", { roomId });
-
-    setTimeout(() => navigate("/matchmaking"), 2500);
-  };
-
-  /* ---------------- EXTEND ---------------- */
-  const voteExtend = (minutes) => {
-    if (myVote) return;
-
-    setMyVote("yes");
-    setOtherDeciding(true);
-
-    toast({
-      title: "Extension requested",
-      description: "Waiting for the other person…",
-      status: "info",
-      duration: 3000,
-      isClosable: true,
-    });
-
-    socket.emit("extend-decision", {
-      roomId,
-      decision: "extend",
-      extraTime: minutes * 60,
-    });
-  };
-
-  const voteReject = () => {
-    if (myVote) return;
-    setMyVote("no");
-    socket.emit("extend-decision", { roomId, decision: "reject" });
-  };
-
-  const handleReport = (reason) => {
+  /* ---------------- REPORT ---------------- */
+  const handleReport = () => {
     socket.emit("end-chat", { roomId });
     onClose();
-    setTimeout(() => navigate("/matchmaking"), 1500);
   };
 
   const formatTime = () => {
@@ -222,15 +179,31 @@ const Chat = () => {
               <Button size="sm" variant="outline" colorScheme="red" onClick={onOpen}>
                 Report
               </Button>
-              <Button size="sm" variant="outline" colorScheme="cyan" onClick={() => endChat("You ended the chat.")}>
-                End Chat
-              </Button>
             </HStack>
           </HStack>
         </Box>
 
         {/* CHAT */}
         <VStack spacing={3} px={4} py={4} minH="calc(100vh - 160px)">
+          {messages.length === 0 && (
+            <VStack>
+              <Text color="gray.400">Start the conversation</Text>
+              <HStack wrap="wrap" justify="center">
+                {starterMessages.map((m) => (
+                  <Button
+                    key={m}
+                    size="sm"
+                    variant="outline"
+                    colorScheme="cyan"
+                    onClick={() => sendMessage(m)}
+                  >
+                    {m}
+                  </Button>
+                ))}
+              </HStack>
+            </VStack>
+          )}
+
           {messages.map((m, i) => (
             <HStack key={i} justify={m.sender === "me" ? "flex-end" : m.sender === "system" ? "center" : "flex-start"} w="100%">
               <Box
@@ -278,24 +251,6 @@ const Chat = () => {
         )}
       </Box>
 
-      {/* EXTEND MODAL */}
-      <Modal isOpen={showExtend} isCentered>
-        <ModalOverlay />
-        <ModalContent bg="black" color="white">
-          <ModalHeader color="#00f2ff">Extend chat?</ModalHeader>
-          <ModalBody>
-            <VStack spacing={3}>
-              <Button onClick={() => voteExtend(5)}>➕ 5 minutes</Button>
-              <Button onClick={() => voteExtend(10)}>➕ 10 minutes</Button>
-              <Button colorScheme="red" onClick={voteReject}>Not needed</Button>
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            {myVote && <Text fontSize="sm">Waiting for response…</Text>}
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
       {/* REPORT MODAL */}
       <Modal isOpen={isOpen} onClose={onClose} isCentered>
         <ModalOverlay />
@@ -304,7 +259,7 @@ const Chat = () => {
           <ModalBody>
             <VStack spacing={3}>
               {reportReasons.map((r) => (
-                <Button key={r} variant="outline" colorScheme="red" onClick={() => handleReport(r)}>
+                <Button key={r} variant="outline" colorScheme="red" onClick={handleReport}>
                   {r}
                 </Button>
               ))}
