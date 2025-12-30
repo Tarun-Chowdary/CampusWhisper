@@ -14,26 +14,7 @@ const app = express();
 /* ================== MIDDLEWARE ================== */
 const allowedOrigin = "https://campus-whisper.vercel.app";
 
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", allowedOrigin);
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
-
-app.use(
-  cors({
-    origin: allowedOrigin,
-    credentials: true,
-  })
-);
-
+app.use(cors({ origin: allowedOrigin, credentials: true }));
 app.use(express.json());
 
 /* ================== ROUTES ================== */
@@ -49,39 +30,44 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST"],
     credentials: true,
   },
+  pingTimeout: 60000, // 🔥 IMPORTANT
 });
 
 /* ================== SOCKET STATE ================== */
 const matchmakingQueue = [];
-const activeChats = {}; // roomId -> { remaining, timer, votes }
+const activeChats = {}; // roomId -> { remaining, timer }
+const extendVotes = {}; // roomId -> { votes: Set, extraTime }
 
-/* ================== TIMER LOGIC ================== */
+/* ================== TIMER ================== */
 const startChatTimer = (roomId) => {
   const chat = activeChats[roomId];
   if (!chat) return;
 
   chat.timer = setInterval(() => {
     chat.remaining -= 1;
-
     io.to(roomId).emit("timer-update", chat.remaining);
 
-    if (chat.remaining === 10) {
-      chat.votes = {};
-      io.to(roomId).emit("ask-extension");
-    }
-
-    if (chat.remaining <= 0) {
-      clearInterval(chat.timer);
-      io.to(roomId).emit("chat-ended");
-      delete activeChats[roomId];
+    // ⛔ NEVER auto-end chat
+    if (chat.remaining < 0) {
+      chat.remaining = 0;
     }
   }, 1000);
 };
 
+/* ================== CLEANUP ================== */
+const cleanupRoom = (roomId) => {
+  const chat = activeChats[roomId];
+  if (chat?.timer) clearInterval(chat.timer);
+  delete activeChats[roomId];
+  delete extendVotes[roomId];
+  io.in(roomId).socketsLeave(roomId);
+};
+
 /* ================== SOCKET EVENTS ================== */
 io.on("connection", (socket) => {
-  console.log("🟢 User connected:", socket.id);
+  console.log("🟢 Connected:", socket.id);
 
+  /* ---------- MATCHMAKING ---------- */
   socket.on("join-queue", ({ userId }) => {
     if (matchmakingQueue.find((u) => u.userId === userId)) return;
 
@@ -91,32 +77,29 @@ io.on("connection", (socket) => {
       const a = matchmakingQueue.shift();
       const b = matchmakingQueue.shift();
 
-      const roomId = [a.userId, b.userId].sort().join("_");
+      const roomId = `${a.socketId}_${b.socketId}`;
 
       activeChats[roomId] = {
         remaining: 300,
-        votes: {},
         timer: null,
       };
 
-      io.to(a.socketId).emit("match-found", {
-        roomId,
-        matchedUserId: b.userId,
-      });
+      socket.join(roomId);
+      io.to(a.socketId).socketsJoin(roomId);
+      io.to(b.socketId).socketsJoin(roomId);
 
-      io.to(b.socketId).emit("match-found", {
-        roomId,
-        matchedUserId: a.userId,
-      });
+      io.to(roomId).emit("match-found", { roomId });
 
       startChatTimer(roomId);
     }
   });
 
+  /* ---------- ROOM ---------- */
   socket.on("join-room", ({ roomId }) => {
     socket.join(roomId);
   });
 
+  /* ---------- MESSAGES ---------- */
   socket.on("send-message", ({ roomId, text }) => {
     socket.to(roomId).emit("receive-message", {
       text,
@@ -124,51 +107,18 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("extension-vote", ({ roomId, vote, extraTime }) => {
-    const chat = activeChats[roomId];
-    if (!chat) return;
-
-    chat.votes[socket.id] = vote;
-    const votes = Object.values(chat.votes);
-
-    if (votes.includes("no")) {
-      clearInterval(chat.timer);
-      io.to(roomId).emit("chat-ended");
-      delete activeChats[roomId];
-      return;
-    }
-
-    if (votes.length === 2 && votes.every((v) => v === "yes")) {
-      chat.remaining += extraTime;
-      io.to(roomId).emit("timer-extended", chat.remaining);
-      chat.votes = {};
-    }
-  });
-
-  socket.on("end-chat", ({ roomId }) => {
-    if (activeChats[roomId]) {
-      clearInterval(activeChats[roomId].timer);
-      delete activeChats[roomId];
-    }
-    io.to(roomId).emit("chat-ended");
-  });
-
-  socket.on("disconnect", () => {
-    const index = matchmakingQueue.findIndex((u) => u.socketId === socket.id);
-    if (index !== -1) matchmakingQueue.splice(index, 1);
-    console.log("🔴 User disconnected:", socket.id);
-  });
-
+  /* ---------- TYPING ---------- */
   socket.on("typing", ({ roomId }) => {
     socket.to(roomId).emit("typing");
   });
 
-  const extendVotes = {}; // roomId -> Set(socket.id)
-
+  /* ---------- EXTEND ---------- */
   socket.on("extend-decision", ({ roomId, decision, extraTime }) => {
+    if (!activeChats[roomId]) return;
+
     if (decision === "reject") {
       io.to(roomId).emit("extend-result", { decision: "reject" });
-      delete extendVotes[roomId];
+      cleanupRoom(roomId);
       return;
     }
 
@@ -180,18 +130,31 @@ io.on("connection", (socket) => {
     }
 
     extendVotes[roomId].votes.add(socket.id);
-
-    // notify other user someone voted
     socket.to(roomId).emit("other-voted");
 
-    // BOTH USERS AGREED
     if (extendVotes[roomId].votes.size === 2) {
+      activeChats[roomId].remaining += extendVotes[roomId].extraTime;
+
       io.to(roomId).emit("extend-result", {
         decision: "accept",
-        extraTime,
+        extraTime: extendVotes[roomId].extraTime,
       });
+
       delete extendVotes[roomId];
     }
+  });
+
+  /* ---------- END / REPORT ---------- */
+  socket.on("end-chat", ({ roomId }) => {
+    io.to(roomId).emit("chat-ended");
+    cleanupRoom(roomId);
+  });
+
+  /* ---------- DISCONNECT ---------- */
+  socket.on("disconnect", () => {
+    const i = matchmakingQueue.findIndex((u) => u.socketId === socket.id);
+    if (i !== -1) matchmakingQueue.splice(i, 1);
+    console.log("🔴 Disconnected:", socket.id);
   });
 });
 
