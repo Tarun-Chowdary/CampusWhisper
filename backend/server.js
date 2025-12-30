@@ -62,6 +62,13 @@ const cleanupRoom = (roomId) => {
   delete extendVotes[roomId];
   io.in(roomId).socketsLeave(roomId);
 };
+const forceCloseRoom = async (roomId) => {
+  const sockets = await io.in(roomId).fetchSockets();
+
+  for (const s of sockets) {
+    s.leave(roomId);
+  }
+};
 
 /* ================== SOCKET EVENTS ================== */
 io.on("connection", (socket) => {
@@ -145,9 +152,20 @@ io.on("connection", (socket) => {
   });
 
   /* ---------- END / REPORT ---------- */
-  socket.on("end-chat", ({ roomId }) => {
+  socket.on("end-chat", async ({ roomId }) => {
+    // notify BOTH users
     io.to(roomId).emit("chat-ended");
-    cleanupRoom(roomId);
+
+    // stop timer & cleanup
+    if (activeChats[roomId]?.timer) {
+      clearInterval(activeChats[roomId].timer);
+    }
+
+    delete activeChats[roomId];
+    delete extendVotes[roomId];
+
+    // force-remove both sockets
+    await forceCloseRoom(roomId);
   });
 
   /* ---------- DISCONNECT ---------- */
